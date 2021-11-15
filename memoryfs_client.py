@@ -2,6 +2,19 @@ import pickle, logging
 import xmlrpc.client
 import time
 
+# Constants used for client/service
+# max number of clients
+MAX_CLIENTS = 8
+
+# server address - default is 127.0.0.1, localhost
+SERVER_ADDRESS = '127.0.0.1'
+
+# max number of servers
+MAX_SERVERS = 8
+
+# Constants used for Raid 5
+CHECKSUM_ERROR = -1
+
 # For locks: RSM_UNLOCKED=0 , RSM_LOCKED=1 
 RSM_UNLOCKED = bytearray(b'\x00') * 1
 RSM_LOCKED = bytearray(b'\x01') * 1
@@ -13,13 +26,6 @@ INVALIDATE_BLOCK = 1
 # byte offset within INVALIDATE_BLOCK where invalidation array is stored
 # note - you need to ensure INVALIDATE_BYTE_OFFSET + MAX_CLIENTS < BLOCK_SIZE
 INVALIDATE_BYTE_OFFSET = 32
-# max number of clients
-MAX_CLIENTS = 8
-
-# server address - default is 127.0.0.1, localhost
-SERVER_ADDRESS = '127.0.0.1'
-# max number of servers
-MAX_SERVERS = 8
 
 ##### File system constants
 
@@ -89,7 +95,6 @@ INODE_TYPE_SYM = 3
 
 
 # BLOCK LAYER
-
 class DiskBlocks():
     def __init__(self, args):
 

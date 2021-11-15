@@ -1,5 +1,12 @@
 import pickle, logging
 import argparse
+import hashlib
+
+# Constants used for Raid 5
+CHECKSUM_ERROR = -1
+
+# Decay value emulate decay and produce a checksum error
+DECAY_VALUE = bytearray(b'\0x01')
 
 # For locks: RSM_UNLOCKED=0 , RSM_LOCKED=1 
 RSM_UNLOCKED = bytearray(b'\x00') * 1
@@ -12,15 +19,23 @@ from xmlrpc.server import SimpleXMLRPCRequestHandler
 class RequestHandler(SimpleXMLRPCRequestHandler):
   rpc_paths = ('/RPC2',)
   
-
+# BLOCK LAYER
 class DiskBlocks():
   def __init__(self, total_num_blocks, block_size):
-    # This class stores the raw block array
     self.block = []                                            
     # Initialize raw blocks 
     for i in range (0, total_num_blocks):
       putdata = bytearray(block_size)
       self.block.insert(i,putdata)
+      
+    # Dict to store checksums for each block
+    self.checksums = {}
+
+  # CalcChecksum: calculates and stores a checksum for a provided block
+  def CalcCheckSum(self, data):
+    m = hashlib.md5()
+    m.update(data.data)
+    return m.hexdigest()
 
 if __name__ == "__main__":
 
@@ -31,6 +46,7 @@ if __name__ == "__main__":
   ap.add_argument('-bs', '--block_size', type=int, help='an integer value')
   ap.add_argument('-port', '--port', type=int, help='an integer value')
   ap.add_argument('-sid', '--sid', type=int, help='an integer value')
+  ap.add_argument('-cblk', '--cblk', type=int, help='an integer value')
   args = ap.parse_args()
 
   if args.total_num_blocks:
@@ -57,6 +73,9 @@ if __name__ == "__main__":
     print('Must specify server id')
     quit()
 
+  # parameter used to emulate decay in a specific block
+  # if args.cblk:
+
   # initialize blocks
   RawBlocks = DiskBlocks(TOTAL_NUM_BLOCKS, BLOCK_SIZE)
 
@@ -64,13 +83,22 @@ if __name__ == "__main__":
   server = SimpleXMLRPCServer(("127.0.0.1", PORT), requestHandler=RequestHandler) 
 
   def Get(block_number):
+    # Read data from a block
     result = RawBlocks.block[block_number]
+    # If the stored checksum does not match the computed checksum, return an error
+    if RawBlocks.CalcCheckSum(result) != RawBlocks.checksums[block_number]:
+      print('Checksum comparison: ' + str(RawBlocks.CalcCheckSum(result)) + ' != ' + str(RawBlocks.checksums[block_number]))
+      return CHECKSUM_ERROR
     return result
 
   server.register_function(Get)
 
   def Put(block_number, data):
+    # Store data
     RawBlocks.block[block_number] = data
+    # Compute and store a checksum for the data
+    RawBlocks.checksums[block_number] = RawBlocks.CalcCheckSum(RawBlocks.block[block_number])
+    # print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
     return 0
 
   server.register_function(Put)
