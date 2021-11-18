@@ -199,34 +199,44 @@ class DiskBlocks():
         # Number of filename+inode entries that can be stored in a single block
         FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE
 
-    ## InvalidateCaches: clears client's cache and writes to Invalidation Vector in server
-    def InvalidateCaches(self):
+    ## Check if block cache needs to be invalidated
 
-        # write to invalidation vector
-        offset = INVALIDATE_BYTE_OFFSET + self.clientID
-        invalVector = self.ServerGet(INVALIDATE_BLOCK)  # get invalVector from server
-        for i in range(INVALIDATE_BYTE_OFFSET, INVALIDATE_BYTE_OFFSET + MAX_CLIENTS):
-            invalVector[i:i + 1] = bytearray(b'\x01')
-            # print('Offset: ' + str(i) + ' Value: ' + str(invalVector[i:i+1]))
-        self.Put(INVALIDATE_BLOCK, invalVector)
-        print('CacheInvalidationIssued')
+    def CheckAndInvalidate(self):
 
-        # invalidate local cache
-        self.CheckCacheValid()
+        logging.debug ('CheckAndInvalidate')
+        # Fetch block with invalidation information from server
+        invalidate_block = self.ServerGet(INVALIDATE_BLOCK)
+        # Extract state for this client
+        my_invalid_state = invalidate_block[INVALIDATE_BYTE_OFFSET + self.clientID]
+        if my_invalid_state:
+            print("InvalidatingLocalCache")
+            logging.debug ('CheckAndInvalidate: invalidating cache')
+            # invalidate block cache
+            self.blockcache = {}
+            # change entry for this client to 0 - the cache has been invalidated
+            invalidate_block[INVALIDATE_BYTE_OFFSET + self.clientID] = 0 
+            # write back to server
+            self.Put(INVALIDATE_BLOCK,invalidate_block)
+        return 0
 
-    ## CheckCacheValid: reads Invalidation Vector from server and if cache is not valid
-    ## then clears the block cache.
-    def CheckCacheValid(self):
+    ## Force the invalidation of all block caches
 
-        offset = INVALIDATE_BYTE_OFFSET + self.clientID
-        invalVector = self.ServerGet(INVALIDATE_BLOCK)  # get invalVector from server
-        # print('Offset: ' + str(offset) + ' ' + str(invalVector[INVALIDATE_BYTE_OFFSET:INVALIDATE_BYTE_OFFSET+MAX_CLIENTS]))
-        if (invalVector[offset:offset + 1] == bytearray(b'\x01')):
-            print('InvalidatingLocalCache')
-            self.blockcache.clear()
-            invalVector[offset:offset + 1] = bytearray(b'\x00')
-            self.Put(INVALIDATE_BLOCK, invalVector)
+    def ForceInvalidate(self):
 
+        logging.debug ('ForceInvalidate')
+        print("CacheInvalidationIssued")
+        # Fetch block with invalidation information from server
+        invalidate_block = self.ServerGet(INVALIDATE_BLOCK)
+        logging.debug ('ForceInvalidate: type is' + str(type(invalidate_block)))
+        # Fill in invalidate_value=1 for all clients
+        for i in range(0,MAX_CLIENTS):
+            invalidate_block[INVALIDATE_BYTE_OFFSET+i] = 1 
+        # Put block back into server
+        self.Put(INVALIDATE_BLOCK,invalidate_block)
+        # invalidate own cache
+        self.CheckAndInvalidate()
+        return 0
+        
     ## Put: interface to write a raw block of data to the block indexed by block number
     ## Blocks are padded with zeroes up to BLOCK_SIZE
 
