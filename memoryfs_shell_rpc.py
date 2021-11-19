@@ -128,8 +128,9 @@ class FSShell():
     if n < 0 or n >= TOTAL_NUM_BLOCKS:
       print('Error: block number ' + str(n) + ' not in valid range [0, ' + str(TOTAL_NUM_BLOCKS - 1) + ']')
       return -1
-    logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
+    #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
     logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).hex())))
+    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.GetParityBlock(n).hex())))
     return 0
 
   # implements showinode (log inode i contents)

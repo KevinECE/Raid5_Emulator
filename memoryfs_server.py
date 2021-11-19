@@ -86,9 +86,9 @@ if __name__ == "__main__":
     # Read data from a block
     result = RawBlocks.block[block_number]
     # If the stored checksum does not match the computed checksum, return an error
-    if RawBlocks.CalcCheckSum(result) != RawBlocks.checksums[block_number]:
-      print('Checksum comparison: ' + str(RawBlocks.CalcCheckSum(result)) + ' != ' + str(RawBlocks.checksums[block_number]))
-      return CHECKSUM_ERROR
+    # if RawBlocks.CalcCheckSum(result) != RawBlocks.checksums[block_number]:
+    #   print('Checksum comparison: ' + str(RawBlocks.CalcCheckSum(result)) + ' != ' + str(RawBlocks.checksums[block_number]))
+    #   return CHECKSUM_ERROR
     return result
 
   server.register_function(Get)
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     RawBlocks.block[block_number] = data
     # Compute and store a checksum for the data
     RawBlocks.checksums[block_number] = RawBlocks.CalcCheckSum(RawBlocks.block[block_number])
-    # print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
+    print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
     return 0
 
   server.register_function(Put)

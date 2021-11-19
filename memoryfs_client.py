@@ -207,23 +207,38 @@ class DiskBlocks():
         FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE
 
         ### RAID4 SPECIFIC
+
+    ## Read a single parity block
+    def GetParityBlock(self, block_number):
+        return self.parityServer.Get(block_number)
+
     ## Generate parity for new data
     def GenerateParity(self, physicalServer, physicalBlock, newData):
         # read old data block
         oldData = self.servers[physicalServer].Get(physicalBlock)
+        # pad new data
+        newData = bytearray(newData.ljust(BLOCK_SIZE, b'\x00'))
         # XOR new data with old data
-        dataXOR = bytes(oldData ^ newData for (oldData, newData) in zip(oldData, newData))
-        # print('Data XOR oldData = ' + str(oldData) + 'Data XOR newData = ' + str(newData))
-        # print('Data XOR result: ' + str(dataXOR))
+        dataXOR = bytearray(oldData ^ newData for (oldData, newData) in zip(oldData, newData))
         # read parity block
         oldParity = self.parityServer.Get(physicalBlock)
         # XOR result of previous XOR with the parity block to get the new parity 
-        newParity = bytes(oldParity ^ dataXOR for (oldParity, newdataXORData) in zip(oldParity, dataXOR))
+        newParity = bytes(oldParity ^ dataXOR for (oldParity, dataXOR) in zip(oldParity, dataXOR))
         # store the newly geneated parity block
-        self.parityServer.Put(physicalBlock, newParity)
+        newParity = bytearray(newParity.ljust(BLOCK_SIZE, b'\x00'))
+        ret = self.parityServer.Put(physicalBlock, newParity)
+        if ret == -1:
+            logging.error('Put: Server returns error')
+            quit()
+        print('Block # ' + str(physicalBlock))
+        print('oldData   = ' + str(oldData.hex())) 
+        print('newData   = ' + str(newData.hex()))
+        print('DATAXOR   = ' + str(dataXOR.hex()))
+        print('oldParity = ' + str(oldParity.hex()))
+        print('newParity = ' + str(newParity.hex()))
 
         ### RAID4 SPECIFIC
-    # Convert a virtual block to a physical block and server
+    ## Convert a virtual block to a physical block and server
     def VirtualToPhysical(self, virtual_number):
         physicalServer = virtual_number % self.numServers
         physicalBlock = virtual_number // self.numServers
