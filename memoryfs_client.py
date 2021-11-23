@@ -88,6 +88,7 @@ INODE_TYPE_FILE = 1
 INODE_TYPE_DIR = 2
 INODE_TYPE_SYM = 3
 
+
 # BLOCK LAYER
 class DiskBlocks():
     def __init__(self, args):
@@ -282,7 +283,7 @@ class DiskBlocks():
             server, physical_block_number = self.VirtualToPhysicalData(block_number)
             data = self.servers[server].Get(physical_block_number)
             if server == 0 and physical_block_number == 2:
-                print('Get data for corrupt blk: ' + str(data))
+                logging.info('Get data for corrupt blk: ' + str(data))
             # check if block corrupted
             if data == CHECKSUM_ERROR:
                 result = self.RecoverBlockData(server, physical_block_number)
