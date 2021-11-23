@@ -45,6 +45,7 @@ class FSShell():
 
   # implements append
   def append(self, filename, string):
+    logging.info("APPEND")
     i = self.FileObject.Lookup(filename, self.cwd)
     if i == -1:
       print ("Error: not found\n")
@@ -56,6 +57,7 @@ class FSShell():
       return -1
     written = self.FileObject.Write(i, inobj.inode.size, bytearray(string,"utf-8"))
     print ("Successfully appended " + str(written) + " bytes.")
+    logging.debug("APPEND")
     return 0
     
   # implements link
@@ -116,21 +118,36 @@ class FSShell():
     print (data.decode())
     return 0
 
-  # implements showblock (log block n contents)
-  def showblock(self, n):
-
+  # implements showblock (log block n contents) -> extended to show block for specific server
+  def showblock(self, s, n, parity=False):
+    
+    try:
+      s = int(s)
+    except ValueError:
+      print('Error: ' + s + ' not a valid Integer')
+      return -1
     try:
       n = int(n)
     except ValueError:
       print('Error: ' + n + ' not a valid Integer')
       return -1
+    
+    if s < 0 or s >= self.FileObject.RawBlocks.numServers:
+      print('Error: server number ' + str(s) + ' not in valid range [0, ' + str(self.FileObject.RawBlocks.numServers) + ']')
+      return -1
 
     if n < 0 or n >= TOTAL_NUM_BLOCKS:
       print('Error: block number ' + str(n) + ' not in valid range [0, ' + str(TOTAL_NUM_BLOCKS - 1) + ']')
       return -1
+    
+    # output parity block for speicified block number (n) if parity = True
+    if parity:
+      print('parity true')
+      logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.parityServer.Get(n).hex())))
+      return 0
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
-    logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).hex())))
-    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.GetParityBlock(n).hex())))
+    logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.servers[s].Get(n).hex())))
+  
     return 0
 
   # implements showinode (log inode i contents)
@@ -182,15 +199,13 @@ class FSShell():
           print ("Error: cd requires one argument")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.cd(splitcmd[1])
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "cat":
         if len(splitcmd) != 2:
           print ("Error: cat requires one argument")
         else:
-          self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
+          self.FileObject.RawBlocks.Acquire()         
           self.cat(splitcmd[1])
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "mkdir":
@@ -198,34 +213,27 @@ class FSShell():
           print ("Error: mkdir requires one argument")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.mkdir(splitcmd[1])
-          self.FileObject.RawBlocks.ForceInvalidate()
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "create":
         if len(splitcmd) != 2:
           print ("Error: create requires one argument")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.create(splitcmd[1])
-          self.FileObject.RawBlocks.ForceInvalidate()
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "ln":
         if len(splitcmd) != 3:
           print ("Error: ln requires two arguments")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.link(splitcmd[1], splitcmd[2])
-          self.FileObject.RawBlocks.ForceInvalidate()
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "chroot":
         if len(splitcmd) != 2:
           print ("Error: chroot requires one argument")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.chroot(splitcmd[1])
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "append":
@@ -233,20 +241,19 @@ class FSShell():
           print ("Error: append requires two arguments")
         else:
           self.FileObject.RawBlocks.Acquire()
-          self.FileObject.RawBlocks.CheckAndInvalidate()
           self.append(splitcmd[1], splitcmd[2])
-          self.FileObject.RawBlocks.ForceInvalidate()
           self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "ls":
-        self.FileObject.RawBlocks.Acquire()
-        self.FileObject.RawBlocks.CheckAndInvalidate()
+        self.FileObject.RawBlocks.Acquire()        
         self.ls()
         self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "showblock":
-        if len(splitcmd) != 2:
-          print ("Error: showblock requires one argument")
+        if len(splitcmd) < 3:
+          print ("Error: showblock requires at least two arguments: server#, block#")
+        elif len(splitcmd) == 4:
+          self.showblock(splitcmd[1], splitcmd[2], splitcmd[3])
         else:
-          self.showblock(splitcmd[1])
+          self.showblock(splitcmd[1], splitcmd[2])
       elif splitcmd[0] == "showinode":
         if len(splitcmd) != 2:
           print ("Error: showinode requires one argument")

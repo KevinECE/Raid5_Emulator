@@ -2,11 +2,11 @@ import pickle, logging
 import argparse
 import hashlib
 
-# Constants used for Raid 5
-CHECKSUM_ERROR = -1
+# Corrupt block number variable
+CORRUPT_BLOCK_NUMBER = -1
 
-# Decay value emulate decay and produce a checksum error
-DECAY_VALUE = bytearray(b'\0x01')
+# Checksum error constant for handling corrupt blocks
+CHECKSUM_ERROR = -1
 
 # For locks: RSM_UNLOCKED=0 , RSM_LOCKED=1 
 RSM_UNLOCKED = bytearray(b'\x00') * 1
@@ -35,7 +35,7 @@ class DiskBlocks():
   def CalcCheckSum(self, data):
     m = hashlib.md5()
     m.update(data.data)
-    return m.hexdigest()
+    return m.hexdigest()  
 
 if __name__ == "__main__":
 
@@ -72,6 +72,10 @@ if __name__ == "__main__":
   else:
     print('Must specify server id')
     quit()
+    
+  if args.cblk:
+    CORRUPT_BLOCK_NUMBER = args.cblk
+    print('Corrupt block' + str(CORRUPT_BLOCK_NUMBER))
 
   # parameter used to emulate decay in a specific block
   # if args.cblk:
@@ -86,9 +90,8 @@ if __name__ == "__main__":
     # Read data from a block
     result = RawBlocks.block[block_number]
     # If the stored checksum does not match the computed checksum, return an error
-    # if RawBlocks.CalcCheckSum(result) != RawBlocks.checksums[block_number]:
-    #   print('Checksum comparison: ' + str(RawBlocks.CalcCheckSum(result)) + ' != ' + str(RawBlocks.checksums[block_number]))
-    #   return CHECKSUM_ERROR
+    if block_number == CORRUPT_BLOCK_NUMBER:
+      return CHECKSUM_ERROR
     return result
 
   server.register_function(Get)
@@ -98,7 +101,7 @@ if __name__ == "__main__":
     RawBlocks.block[block_number] = data
     # Compute and store a checksum for the data
     RawBlocks.checksums[block_number] = RawBlocks.CalcCheckSum(RawBlocks.block[block_number])
-    print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
+    # print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
     return 0
 
   server.register_function(Put)
