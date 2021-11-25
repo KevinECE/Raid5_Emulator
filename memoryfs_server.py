@@ -15,6 +15,11 @@ RSM_LOCKED = bytearray(b'\x01') * 1
 from xmlrpc.server import SimpleXMLRPCServer
 from xmlrpc.server import SimpleXMLRPCRequestHandler
 
+# CalcChecksum: calculates and stores a checksum for a provided block
+def CalcCheckSum(data):
+  return hashlib.md5(data).hexdigest()
+    
+
 # Restrict to a particular path.
 class RequestHandler(SimpleXMLRPCRequestHandler):
   rpc_paths = ('/RPC2',)
@@ -31,13 +36,7 @@ class DiskBlocks():
     # Dict to store checksums for each block
     self.checksums = {}
 
-  # CalcChecksum: calculates and stores a checksum for a provided block
-  def CalcCheckSum(self, data):
-    m = hashlib.md5()
-    m.update(data.data)
-    return m.hexdigest()  
-
-if __name__ == "__main__":
+if __name__ == "__main__": 
 
   # Construct the argument parser
   ap = argparse.ArgumentParser()
@@ -72,36 +71,41 @@ if __name__ == "__main__":
   else:
     print('Must specify server id')
     quit()
-    
-  if args.cblk:
-    CORRUPT_BLOCK_NUMBER = args.cblk
-    print('Corrupt block' + str(CORRUPT_BLOCK_NUMBER))
 
-  # parameter used to emulate decay in a specific block
-  # if args.cblk:
-
-  # initialize blocks
+  # Initialize blocks
   RawBlocks = DiskBlocks(TOTAL_NUM_BLOCKS, BLOCK_SIZE)
+
+  # Corrupt a block if input parameter exists  
+  if args.cblk is not None or args.cblk == 0:
+    CORRUPT_BLOCK_NUMBER = args.cblk
+    print('CORRUPT BLOCK NUMBER: ' + str(CORRUPT_BLOCK_NUMBER))
 
   # Create server
   server = SimpleXMLRPCServer(("127.0.0.1", PORT), requestHandler=RequestHandler) 
 
   def Get(block_number):
+    # Corrupt data if block_number = cblk
+    if(block_number == CORRUPT_BLOCK_NUMBER):
+      RawBlocks.block[args.cblk] = bytearray(b'\xFF') * BLOCK_SIZE
+      return CHECKSUM_ERROR
     # Read data from a block
     result = RawBlocks.block[block_number]
-    # If the stored checksum does not match the computed checksum, return an error
-    if block_number == CORRUPT_BLOCK_NUMBER:
-      return CHECKSUM_ERROR
+    test = CalcCheckSum(result)
+
+    # Validate checksum
+    if RawBlocks.checksums.get(block_number) is not None and test != RawBlocks.checksums.get(block_number):
+      print('CORRECTLY DETECTED ERROR')
+
     return result
 
   server.register_function(Get)
 
   def Put(block_number, data):
     # Store data
-    RawBlocks.block[block_number] = data
+    RawBlocks.block[block_number] = bytearray(data.data)
     # Compute and store a checksum for the data
-    RawBlocks.checksums[block_number] = RawBlocks.CalcCheckSum(RawBlocks.block[block_number])
-    # print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
+    RawBlocks.checksums[block_number] = CalcCheckSum(RawBlocks.block[block_number])
+    print('The checksum for block# ' + str(block_number) + ' is ' + str(RawBlocks.checksums[block_number]))
     return 0
 
   server.register_function(Put)

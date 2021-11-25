@@ -1,1 +1,1 @@
-for first create file it's stored in server 1 block 2
+for first create file it's stored in server 1 block 2 = virtual block 7
