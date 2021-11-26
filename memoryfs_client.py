@@ -199,11 +199,12 @@ class DiskBlocks():
         # logging.info('Recovering block ' + str(virutal_block_number))
         # Map virtual to server, physical
         server, physical_block_number = self.VirtualToPhysicalData(virutal_block_number)
+        logging.info('Recovering Block [' + str(physical_block_number) + '] from Server ' + str(server))
         recovered = bytearray(BLOCK_SIZE)
         # XOR other servers
         for i in range(0, self.numServers):
             # Don't include server we're recovering for
-            if i != FAILED_SERVER:
+            if i != server:
                 block = bytearray(self.servers[i].Get(physical_block_number))
                 recovered = bytearray(np.bitwise_xor(recovered, block))
                 # logging.debug('DataXR Block ' + str(i) + ': ' + str(recovered.hex()))
@@ -226,7 +227,6 @@ class DiskBlocks():
         if failstop == True:
             # read old data block with XOR
             oldData = self.RecoverBlockData(virtual_block_number)
-            print('FAILSTOP!!!')
         else:
             # read old data block
             oldData = bytearray(self.Get(virtual_block_number))
@@ -283,22 +283,25 @@ class DiskBlocks():
 
             if server == FAILED_SERVER:
                 self.parityServer.Put(physical_block_number, parity)
-                FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, True)
+                FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
                 self.parityServer.Put(physical_block_number, FailstopWrite)
 
             else:
+                # Handle failstop on parity put
                 try:
                     self.parityServer.Put(physical_block_number, parity)
                 except ConnectionRefusedError:
                     FAILED_SERVER = server
-                    parity = self.GenerateParity(virtual_block_number, physical_block_number, block_data, True)
+                    logging.info('Failstop on server ' + str(FAILED_SERVER))
+                    parity = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
 
                 try:    
                     # store new block data
                     self.servers[server].Put(physical_block_number, bytearray(putdata))
                 except:
                     FAILED_SERVER = server
-                    FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, True)
+                    logging.info('Failstop on server ' + str(FAILED_SERVER))
+                    FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
                     self.parityServer.Put(physical_block_number, parity)
 
             return 0
@@ -326,14 +329,14 @@ class DiskBlocks():
                     data = self.servers[server].Get(physical_block_number)
                 except ConnectionRefusedError:
                     FAILED_SERVER = server
-                    print('SERVER ' + str(FAILED_SERVER) + ' FAILED')
+                    logging.info('Failstop on server ' + str(FAILED_SERVER))
                     data = self.RecoverBlockData(virtual_block_number)
 
             # handle corrupted blocks
             if data == CHECKSUM_ERROR:
+                logging.info('Recovering data from corrupt block: ' + str(physical_block_number) + ' Server: ' + str(server))
                 data = self.RecoverBlockData(virtual_block_number)
-                logging.debug('Data recovered from corrupt Block: ' + str(physical_block_number) + ' Server: ' + str(server))
-                logging.debug('Recovered data:' + str(data))
+                logging.info('Recovered data:' + str(data))
                 
             return bytearray(data)
 
