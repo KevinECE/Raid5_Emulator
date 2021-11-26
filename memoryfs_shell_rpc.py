@@ -13,6 +13,12 @@ class FSShell():
     self.cwd = 0
     self.FileObject = file
 
+  # implements repair
+  def repair(self, server_ID):
+    logging.info('Initiating repair on server ' + str(server_ID))
+    self.FileObject.RawBlocks.Repair(int(server_ID))
+    logging.info('Repair complete!')
+
   # implements cd (change directory)
   def cd(self, dir):
     # i = self.FileObject.Lookup(dir,self.cwd)
@@ -194,6 +200,11 @@ class FSShell():
       splitcmd = command.split()
       if len(splitcmd) == 0:
         continue
+      elif splitcmd[0] == "repair":
+        if len(splitcmd) != 2:
+          print("Error: repair requires one argument")
+        else:
+          self.repair(splitcmd[1]) 
       elif splitcmd[0] == "cd":
         if len(splitcmd) != 2:
           print ("Error: cd requires one argument")

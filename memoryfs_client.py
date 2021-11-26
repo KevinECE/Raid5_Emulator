@@ -194,17 +194,34 @@ class DiskBlocks():
         # Number of filename+inode entries that can be stored in a single block
         FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE    
 
+    # Repair: reconnects to server_ID, and regenerates all blocks for server_ID using data from the other servers in the array 
+    def Repair(self, server_ID):
+        global FAILED_SERVER
+        # Reconnect to server [server_ID]
+        server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[server_ID])
+        self.servers[server_ID] = (xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
+        logging.info('Reconnected server [' + str(server_ID) + '] to port [' + str(self.ports[server_ID]) + ']')
+
+        # Reset FAILED_SERVER to -1
+        FAILED_SERVER = -1
+
+        #Regenerate all blocks for server [server_ID]
+        for i in range(0, TOTAL_NUM_BLOCKS, self.numServers):
+            recovered_block_data = self.RecoverBlockData(i)
+            self.Put(i, recovered_block_data)
+            logging.debug('Recovered block [' + str(i) + ']')
+
     ## Data recovery
     def RecoverBlockData(self, virutal_block_number):
         # logging.info('Recovering block ' + str(virutal_block_number))
         # Map virtual to server, physical
-        server, physical_block_number = self.VirtualToPhysicalData(virutal_block_number)
-        logging.info('Recovering Block [' + str(physical_block_number) + '] from Server ' + str(server))
+        server_ID, physical_block_number = self.VirtualToPhysicalData(virutal_block_number)
+        logging.info('Recovering Block [' + str(physical_block_number) + '] for Server ' + str(server_ID))
         recovered = bytearray(BLOCK_SIZE)
         # XOR other servers
         for i in range(0, self.numServers):
             # Don't include server we're recovering for
-            if i != server:
+            if i != server_ID:
                 block = bytearray(self.servers[i].Get(physical_block_number))
                 recovered = bytearray(np.bitwise_xor(recovered, block))
                 # logging.debug('DataXR Block ' + str(i) + ': ' + str(recovered.hex()))
@@ -254,11 +271,11 @@ class DiskBlocks():
     ## Convert a virtual block to a physical block and server
     def VirtualToPhysicalData(self, virtual_number):
 
-        server = virtual_number % self.numServers
+        server_ID = virtual_number % self.numServers
         physical_block_number = virtual_number // self.numServers
-        logging.debug('Virtual Block ' + str(virtual_number) + ' mapped to (Server ' + str(server) + ', Block ' + str(physical_block_number) + ' )')
+        logging.debug('Virtual Block ' + str(virtual_number) + ' mapped to (Server ' + str(server_ID) + ', Block ' + str(physical_block_number) + ' )')
         # logging.info('Virtual Block ' + str(virtual_number) + ' mapped to (Server ' + str(server) + ', Block ' + str(physical_block_number) + ' )')
-        return server, physical_block_number
+        return server_ID, physical_block_number
 
         
     ## Put: interface to write a raw block of data to the block indexed by block number
@@ -276,12 +293,12 @@ class DiskBlocks():
             # ljust does the padding with zeros
             putdata = bytearray(block_data.ljust(BLOCK_SIZE, b'\x00'))
             # get physical server and block numbers from virtual block number
-            server, physical_block_number = self.VirtualToPhysicalData(virtual_block_number)
+            server_ID, physical_block_number = self.VirtualToPhysicalData(virtual_block_number)
            
             # generate parity for new block data
             parity = self.GenerateParity(virtual_block_number, physical_block_number, block_data)
 
-            if server == FAILED_SERVER:
+            if server_ID == FAILED_SERVER:
                 self.parityServer.Put(physical_block_number, parity)
                 FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
                 self.parityServer.Put(physical_block_number, FailstopWrite)
@@ -291,15 +308,15 @@ class DiskBlocks():
                 try:
                     self.parityServer.Put(physical_block_number, parity)
                 except ConnectionRefusedError:
-                    FAILED_SERVER = server
+                    FAILED_SERVER = server_ID
                     logging.info('Failstop on server ' + str(FAILED_SERVER))
                     parity = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
 
                 try:    
                     # store new block data
-                    self.servers[server].Put(physical_block_number, bytearray(putdata))
+                    self.servers[server_ID].Put(physical_block_number, putdata)
                 except:
-                    FAILED_SERVER = server
+                    FAILED_SERVER = server_ID
                     logging.info('Failstop on server ' + str(FAILED_SERVER))
                     FailstopWrite = self.GenerateParity(virtual_block_number, physical_block_number, block_data, failstop=True)
                     self.parityServer.Put(physical_block_number, parity)
@@ -318,23 +335,22 @@ class DiskBlocks():
         if virtual_block_number in range(0, TOTAL_NUM_BLOCKS):
 
             # get physical server and block numbers from virtual block number
-            server, physical_block_number = self.VirtualToPhysicalData(virtual_block_number)
+            server_ID, physical_block_number = self.VirtualToPhysicalData(virtual_block_number)
 
-            
-            if server == FAILED_SERVER:
+            if server_ID == FAILED_SERVER:
                 data = self.RecoverBlockData(virtual_block_number)
             else:
                 # check for failstops and handle them appropriately
                 try:
-                    data = self.servers[server].Get(physical_block_number)
+                    data = self.servers[server_ID].Get(physical_block_number)
                 except ConnectionRefusedError:
-                    FAILED_SERVER = server
+                    FAILED_SERVER = server_ID
                     logging.info('Failstop on server ' + str(FAILED_SERVER))
                     data = self.RecoverBlockData(virtual_block_number)
 
             # handle corrupted blocks
             if data == CHECKSUM_ERROR:
-                logging.info('Recovering data from corrupt block: ' + str(physical_block_number) + ' Server: ' + str(server))
+                logging.info('Recovering data from corrupt block: ' + str(physical_block_number) + ' Server: ' + str(server_ID))
                 data = self.RecoverBlockData(virtual_block_number)
                 logging.info('Recovered data:' + str(data))
                 

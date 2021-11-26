@@ -50,6 +50,7 @@ if __name__ == "__main__":
 
   if args.total_num_blocks:
     TOTAL_NUM_BLOCKS = args.total_num_blocks
+    print('TOTAL BLOCKS = ' + str(TOTAL_NUM_BLOCKS))
   else:
     print('Must specify total number of blocks') 
     quit()
