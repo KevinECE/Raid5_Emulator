@@ -1,9 +1,51 @@
 import numpy as np
 import hashlib
 
-data = bytearray([1,2,3,4,5])
-hash = hashlib.md5(data).hexdigest()
-print(hash)
+numServers = 5
+
+# RAID5 PROTOTYPING
+### RAID5
+## Convert a virtual block to a physical block and server
+def VirtualToPhysicalData(virtual_block_number):
+
+    parityServer, parityBlock = VirtualToPhysicalParity(virtual_block_number)
+
+    server_ID = virtual_block_number % (numServers-1) 
+    physical_block_number = virtual_block_number // numServers
+
+    if server_ID >= parityServer:
+        server_ID += 1
+    return server_ID, physical_block_number
+
+def VirtualToPhysicalParity(virtual_block_number):
+    physical_block_number = virtual_block_number // (numServers-1)
+    server_ID = (numServers - 1) - (physical_block_number % (numServers))
+    
+    return server_ID, physical_block_number 
+
+print('DATA')
+for i in range(0, 30):
+    server, block = VirtualToPhysicalData(i)
+    print('VB = ' + str(i) + ' Server = ' + str(server) + ' PB = ' + str(block))
+
+print('PARITY')
+
+
+# for i in range(0, 20):
+#     parityServer, parityBlock = VirtualToPhysicalParity(i)
+#     print('VB = ' + str(i) + ' Server = ' + str(parityServer) + ' PB = ' + str(parityBlock))
+
+
+
+
+
+
+
+
+
+# data = bytearray([1,2,3,4,5])
+# hash = hashlib.md5(data).hexdigest()
+# print(hash)
 
 
 # server = 3

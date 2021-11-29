@@ -152,7 +152,7 @@ class FSShell():
       logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.parityServer.Get(n).hex())))
       return 0
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
-    logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.servers[s].Get(n).hex())))
+    logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(s, n).hex())))
   
     return 0
 
