@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # Corrupt data if block_number = cblk
     if(block_number == CORRUPT_BLOCK_NUMBER):
       RawBlocks.block[args.cblk] = bytearray(b'\xFF') * BLOCK_SIZE
-      return CHECKSUM_ERROR
+      
     # Read data from a block
     result = RawBlocks.block[block_number]
     test = CalcCheckSum(result)
@@ -95,6 +95,7 @@ if __name__ == "__main__":
     # Validate checksum
     if RawBlocks.checksums.get(block_number) is not None and test != RawBlocks.checksums.get(block_number):
       print('CORRECTLY DETECTED ERROR')
+      return CHECKSUM_ERROR
 
     return result
 

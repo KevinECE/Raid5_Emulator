@@ -125,34 +125,34 @@ class FSShell():
     return 0
 
   # implements showblock (log block n contents) -> extended to show block for specific server
-  def showblock(self, s, n, parity=False):
+  def showblock(self, n, parity=False):
     
-    try:
-      s = int(s)
-    except ValueError:
-      print('Error: ' + s + ' not a valid Integer')
-      return -1
+    # try:
+    #   s = int(s)
+    # except ValueError:
+    #   print('Error: ' + s + ' not a valid Integer')
+    #   return -1
     try:
       n = int(n)
     except ValueError:
       print('Error: ' + n + ' not a valid Integer')
       return -1
     
-    if s < 0 or s >= self.FileObject.RawBlocks.numServers:
-      print('Error: server number ' + str(s) + ' not in valid range [0, ' + str(self.FileObject.RawBlocks.numServers) + ']')
-      return -1
+    # if s < 0 or s >= self.FileObject.RawBlocks.numServers:
+    #   print('Error: server number ' + str(s) + ' not in valid range [0, ' + str(self.FileObject.RawBlocks.numServers) + ']')
+    #   return -1
 
     if n < 0 or n >= TOTAL_NUM_BLOCKS:
       print('Error: block number ' + str(n) + ' not in valid range [0, ' + str(TOTAL_NUM_BLOCKS - 1) + ']')
       return -1
+
+    dataServer, dataBlock = self.FileObject.RawBlocks.VirtualToPhysicalData(n)
+    parityServer, parityBlock = self.FileObject.RawBlocks.VirtualToPhysicalParity(n)
     
     # output parity block for speicified block number (n) if parity = True
-    if parity:
-      print('parity true')
-      logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.parityServer.Get(n).hex())))
-      return 0
+    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.servers[parityServer].Get(parityBlock).hex())))
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
-    logging.info('Block (hex) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(s, n).hex())))
+    logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.servers[dataServer].Get(dataBlock).hex())))
   
     return 0
 
@@ -259,12 +259,12 @@ class FSShell():
         self.ls()
         #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "showblock":
-        if len(splitcmd) < 3:
+        if len(splitcmd) < 2:
           print ("Error: showblock requires at least two arguments: server#, block#")
         elif len(splitcmd) == 4:
           self.showblock(splitcmd[1], splitcmd[2], splitcmd[3])
         else:
-          self.showblock(splitcmd[1], splitcmd[2])
+          self.showblock(splitcmd[1])
       elif splitcmd[0] == "showinode":
         if len(splitcmd) != 2:
           print ("Error: showinode requires one argument")

@@ -11,7 +11,7 @@ def VirtualToPhysicalData(virtual_block_number):
     parityServer, parityBlock = VirtualToPhysicalParity(virtual_block_number)
 
     server_ID = virtual_block_number % (numServers-1) 
-    physical_block_number = virtual_block_number // numServers
+    physical_block_number = virtual_block_number // (numServers-1)
 
     if server_ID >= parityServer:
         server_ID += 1
