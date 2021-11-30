@@ -150,9 +150,9 @@ class FSShell():
     parityServer, parityBlock = self.FileObject.RawBlocks.VirtualToPhysicalParity(n)
     
     # output parity block for speicified block number (n) if parity = True
-    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.servers[parityServer].Get(parityBlock).hex())))
+    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(parityServer, parityBlock, n).hex())))
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
-    logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.servers[dataServer].Get(dataBlock).hex())))
+    logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.ServerGet(dataServer, dataBlock, n).hex())))
   
     return 0
 
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     logging.info('Initializing data structures...')
     RawBlocks = DiskBlocks(args)
     boot_block = b'\x00\x12\x34\x56'  # constant 00123456 stored as beginning of boot block; no need to change this
-    RawBlocks.InitializeBlocks(boot_block)
+    # RawBlocks.InitializeBlocks(boot_block)
 
     # Print file system information and contents of first few blocks to memoryfs.log
     RawBlocks.PrintFSInfo()
