@@ -1,28 +1,25 @@
 import pickle, logging
 import xmlrpc.client
 import time
+import numpy as np
 
-# For locks: RSM_UNLOCKED=0 , RSM_LOCKED=1 
-RSM_UNLOCKED = bytearray(b'\x00') * 1
-RSM_LOCKED = bytearray(b'\x01') * 1
-RSM_BLOCK = 0
-
-# Constants used for cache:
-# which raw block stores invalidation array
-INVALIDATE_BLOCK = 1
-# byte offset within INVALIDATE_BLOCK where invalidation array is stored
-# note - you need to ensure INVALIDATE_BYTE_OFFSET + MAX_CLIENTS < BLOCK_SIZE
-INVALIDATE_BYTE_OFFSET = 32
+# Constants used for client/service
 # max number of clients
 MAX_CLIENTS = 8
 
 # server address - default is 127.0.0.1, localhost
 SERVER_ADDRESS = '127.0.0.1'
+
 # max number of servers
 MAX_SERVERS = 8
 
-##### File system constants
+# global to keep track of a server that failed
+FAILED_SERVER = -1
 
+# Value returned from a server.Get(block) if block is corrupt
+CHECKSUM_ERROR = -1
+
+##### File system constants
 # Core parameters
 # Total number of blocks in raw strorage
 TOTAL_NUM_BLOCKS = 256
@@ -89,11 +86,10 @@ INODE_TYPE_SYM = 3
 
 
 # BLOCK LAYER
-
 class DiskBlocks():
     def __init__(self, args):
 
-        # List to hold ServerProxy objects for all the servers
+        # list to hold ServerProxy objects for all the servers
         self.servers = []
 
         # initialize clientID
@@ -106,8 +102,8 @@ class DiskBlocks():
         # initialize XMLRPC client connection to raw block servers
         
         # store number of servers argument 
-        if 0 <= args.ns < MAX_SERVERS:
-            self.numServers = args.ns
+        if 0 <= args.ns <= MAX_SERVERS:
+            self.numServers = args.ns 
         else:
             print('Must specify valid number of servers')
             quit()
@@ -115,35 +111,22 @@ class DiskBlocks():
         # list of the server ports provided as arguments
         self.ports = [args.port0, args.port1, args.port2, args.port3, args.port4,
                  args.port5, args.port6, args.port7]
-        print(self.ports)
-        self.ports = self.ports[:self.numServers]
-        print(self.ports)
-        
-        if not self.ports:
-            print('Must specify port number')
-            quit()
         
         # create a url for each server and use that to create various block servers
-        for i in range(0,len(self.ports)):
+        for i in range(0,self.numServers):
             if self.ports[i]:
                 server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[i])
-                print(server_url)
                 self.servers.append(xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
+                print(server_url)
+            else:
+                print('Must specify port number for each of the ' + str(self.numServers) + ' servers')
+                quit()
+
+        print('Running ' + str(len(self.servers)) + ' servers on ports ' + str(self.ports))
 
         self.HandleFSConstants(args)
 
-        self.blockcache = {}
-
-        # The rest below is commented out, as the blocks are stored/initialized on the server
-        # This class stores the raw block array
-        # self.block = []
-        # Initialize raw blocks
-        # for i in range (0, TOTAL_NUM_BLOCKS):
-        #   putdata = bytearray(BLOCK_SIZE)
-        #   self.block.insert(i,putdata)
-
     # HandleFSConstants: Modify the FS constants if provided in command line argument
-
     def HandleFSConstants(self, args):
 
         if args.total_num_blocks:
@@ -192,164 +175,188 @@ class DiskBlocks():
         FILE_NAME_DIRENTRY_SIZE = MAX_FILENAME + INODE_NUMBER_DIRENTRY_SIZE
 
         # Number of filename+inode entries that can be stored in a single block
-        FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE
+        FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE    
 
-    ## InvalidateCaches: clears client's cache and writes to Invalidation Vector in server
-    def InvalidateCaches(self):
+    # Repair: reconnects to server_ID, and regenerates all blocks for server_ID using data from the other servers in the array 
+    def Repair(self, server_ID):
+        
+        global FAILED_SERVER
+        # Reconnect to server [server_ID]
+        server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[server_ID])
+        self.servers[server_ID] = (xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
+        logging.debug('Reconnected server [' + str(server_ID) + '] to port [' + str(self.ports[server_ID]) + ']')
 
-        # write to invalidation vector
-        offset = INVALIDATE_BYTE_OFFSET + self.clientID
-        invalVector = self.ServerGet(INVALIDATE_BLOCK)  # get invalVector from server
-        for i in range(INVALIDATE_BYTE_OFFSET, INVALIDATE_BYTE_OFFSET + MAX_CLIENTS):
-            invalVector[i:i + 1] = bytearray(b'\x01')
-            # print('Offset: ' + str(i) + ' Value: ' + str(invalVector[i:i+1]))
-        self.Put(INVALIDATE_BLOCK, invalVector)
-        print('CacheInvalidationIssued')
+        # Reset FAILED_SERVER to -1
+        FAILED_SERVER = -1
 
-        # invalidate local cache
-        self.CheckCacheValid()
+        # Regenerate all blocks for server [server_ID]
+        for i in range(0, TOTAL_NUM_BLOCKS // self.numServers):
+            recovered_block_data = self.RecoverBlock(server_ID, i)
+            self.servers[server_ID].Put(i, recovered_block_data)
+            logging.debug('Recovered block [' + str(i) + ']')
+            logging.debug(recovered_block_data.hex())
+        
+    ## Recovers data for a specific (server, block) pair
+    def RecoverBlock(self, server, block_number):
+        
+        recovered = bytearray(BLOCK_SIZE)
+        
+        logging.debug('Recovering Server [' + str(server) + ']  Block [' + str(block_number) + ']')
+        
+        # XOR other servers
+        for i in range(0, self.numServers):
+            # Don't include server we're recovering for
+            if i != server:
+                block = bytearray(self.ServerGet(i, block_number))
+                recovered = bytearray(np.bitwise_xor(recovered, block))
 
-    ## CheckCacheValid: reads Invalidation Vector from server and if cache is not valid
-    ## then clears the block cache.
-    def CheckCacheValid(self):
+        logging.debug('Recovered: ' + str(recovered.hex()))
 
-        offset = INVALIDATE_BYTE_OFFSET + self.clientID
-        invalVector = self.ServerGet(INVALIDATE_BLOCK)  # get invalVector from server
-        # print('Offset: ' + str(offset) + ' ' + str(invalVector[INVALIDATE_BYTE_OFFSET:INVALIDATE_BYTE_OFFSET+MAX_CLIENTS]))
-        if (invalVector[offset:offset + 1] == bytearray(b'\x01')):
-            print('InvalidatingLocalCache')
-            self.blockcache.clear()
-            invalVector[offset:offset + 1] = bytearray(b'\x00')
-            self.Put(INVALIDATE_BLOCK, invalVector)
+        return recovered
+
+    ## Generate parity for new data
+    def GenerateParity(self, virtual_block, newData, failstop=False):
+        
+        # Translate virtual
+        dataServer, dataBlock = self.VirtualToPhysicalData(virtual_block)
+        parityServer, parityBlock = self.VirtualToPhysicalParity(virtual_block)
+        # read old data block
+        oldData = self.ServerGet(dataServer, dataBlock)
+        # read parity block
+        oldParity = self.ServerGet(parityServer, parityBlock)
+        # pad new data
+        newData = bytearray(newData.ljust(BLOCK_SIZE, b'\x00'))
+        # XOR new data with old data
+        dataXOR = bytearray(np.bitwise_xor(oldData, newData))
+        # XOR result of previous XOR with the parity block to get the new parity 
+        newParity = bytearray(np.bitwise_xor(dataXOR, oldParity))
+        # store the newly geneated parity block
+        newParity = bytearray(newParity.ljust(BLOCK_SIZE, b'\x00'))
+    
+        return newParity
+
+    ### RAID5
+    def VirtualToPhysicalData(self, virtual_block):
+
+        parityServer, parityBlock = self.VirtualToPhysicalParity(virtual_block)
+        server_ID = virtual_block % (self.numServers-1) 
+        physical_block_number = virtual_block // (self.numServers-1)
+        if server_ID >= parityServer:
+            server_ID += 1
+        logging.debug('Virtual Block ' + str(virtual_block) + ' mapped to DATA (Server ' + str(server_ID) + ', Block ' + str(physical_block_number) + ')')
+
+        return server_ID, physical_block_number
+
+    def VirtualToPhysicalParity(self, virtual_block):
+
+        physical_block_number = virtual_block // (self.numServers-1)
+        server_ID = (self.numServers - 1) - (physical_block_number % (self.numServers))
+        logging.debug('Virtual Block ' + str(virtual_block) + ' mapped to PARITY (Server ' + str(server_ID) + ', Block ' + str(physical_block_number) + ')')
+        
+        return server_ID, physical_block_number 
+
+     # Lower-level get for physical server and block numbers
+    def ServerGet(self, server, block):
+
+        global FAILED_SERVER
+
+        if server == FAILED_SERVER:
+            logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
+            data = self.RecoverBlock(server, block)
+        else:
+            # check for failstops and handle them appropriately
+            try:
+                data = self.servers[server].Get(block)
+            except ConnectionRefusedError:
+                FAILED_SERVER = server
+                logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
+                data = self.RecoverBlock(server, block)
+        # handle corrupted blocks
+        if data == CHECKSUM_ERROR:
+            if FAILED_SERVER >= 0:
+                logging.debug('Cannot recover corrupt block due to failstop on another server')
+                logging.debug('CORRUPT BLOCK: Server = ' + str(server) + ' Block = ' + str(block))
+            else:
+                logging.debug('CORRUPT BLOCK [' + str(block) + '] ON SERVER [' + str(server) + ']')
+                data = self.RecoverBlock(server, block)       
+                
+        return bytearray(data)
+
+    def ServerPut(self, dataServer, dataBlock, virtual_block, block_data):
+
+        global FAILED_SERVER
+
+        # Map virtual block to it's parity block
+        parityServer, parityBlock = self.VirtualToPhysicalParity(virtual_block)
+        # ljust does the padding with zeros
+        putdata = bytearray(block_data.ljust(BLOCK_SIZE, b'\x00'))
+        if dataServer == FAILED_SERVER:
+            logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
+        # Complete a write during failstop by generating parity
+            parity = self.GenerateParity(virtual_block, block_data)
+            self.servers[parityServer].Put(parityBlock, parity)
+        elif parityServer == FAILED_SERVER:
+            logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
+            # logging.debug('Parity Block Failed -> Just do put dont generate parity')
+            self.servers[dataServer].Put(dataBlock, putdata)
+        else:
+            # generate parity for new block data
+            parity = self.GenerateParity(virtual_block, block_data)
+            # Handle failstop on parity put 
+            try:
+                self.servers[parityServer].Put(parityBlock, parity)
+            except ConnectionRefusedError:
+                FAILED_SERVER = parityServer
+                logging.debug('Failstop on server ' + str(FAILED_SERVER))
+            # Handle failstop on data put
+            try:     
+                # store new block data
+                self.servers[dataServer].Put(dataBlock, putdata)
+            except ConnectionRefusedError:
+                FAILED_SERVER = dataServer
+                logging.debug('Failstop on server ' + str(FAILED_SERVER))
+
+            return 0
+
 
     ## Put: interface to write a raw block of data to the block indexed by block number
     ## Blocks are padded with zeroes up to BLOCK_SIZE
-
-    def Put(self, block_number, block_data):
+    def Put(self, virtual_block, block_data):
 
         logging.debug(
-            'Put: block number ' + str(block_number) + ' len ' + str(len(block_data)) + '\n' + str(block_data.hex()))
+            'Put: block number ' + str(virtual_block) + ' len ' + str(len(block_data)) + '\n' + str(block_data.hex()))
         if len(block_data) > BLOCK_SIZE:
             logging.error('Put: Block larger than BLOCK_SIZE: ' + str(len(block_data)))
             quit()
-
-        if block_number in range(0, TOTAL_NUM_BLOCKS):
+        if virtual_block in range(0, TOTAL_NUM_BLOCKS):
             # ljust does the padding with zeros
             putdata = bytearray(block_data.ljust(BLOCK_SIZE, b'\x00'))
-            # Write block
-            # commenting this out as the request now goes to the server
-            # self.block[block_number] = putdata
-            # call Put() method on the server and check for error
-            ret = self.servers[block_number%self.numServers].Put(block_number, putdata)
-            if ret == -1:
-                logging.error('Put: Server returns error')
-                quit()
+            # get physical server and block numbers from virtual block number
+            dataServer, dataBlock = self.VirtualToPhysicalData(virtual_block)
+            # put data in (server_ID, blocknumber)
+            self.ServerPut(dataServer, dataBlock, virtual_block, putdata)
+
             return 0
         else:
-            logging.error('Put: Block out of range: ' + str(block_number))
+            logging.error('Put: Block out of range: ' + str(virtual_block))
             quit()
 
     ## Get: interface to read a raw block of data from block indexed by block number
     ## Equivalent to the textbook's BLOCK_NUMBER_TO_BLOCK(b)
+    def Get(self, virtual_block):
 
-    def ServerGet(self, block_number):
-
-        logging.debug('ServerGet: ' + str(block_number))
-        if block_number in range(0, TOTAL_NUM_BLOCKS):
-            # logging.debug ('\n' + str((self.block[block_number]).hex()))
-            # commenting this out as the request now goes to the server
-            # return self.block[block_number]
-            # call Get() method on the server
-            data = self.servers[block_number%self.numServers].Get(block_number)
-            # return as bytearray
-            return bytearray(data)
-
-        logging.error('ServerGet: Block number larger than TOTAL_NUM_BLOCKS: ' + str(block_number))
-        quit()
-
-    ## RSM: read and set memory equivalent
-
-    def RSM(self, block_number):
-
-        logging.debug('RSM: ' + str(block_number))
-        if block_number in range(0, TOTAL_NUM_BLOCKS):
-            data = self.servers[block_number%self.numServers].RSM(block_number)
-            return bytearray(data)
-
-        logging.error('RSM: Block number larger than TOTAL_NUM_BLOCKS: ' + str(block_number))
-        quit()
-
-    ## Acquire and Release using a disk block lock
-
-    ## ExpBackoff: apply exponential backoff to wait for acquire congestion to dissipate
-    def ExpBackoff(self, numAttempts):
-        wait = 0.5 * (2 ** numAttempts - 1)
-        time.sleep(wait / 1000)
-
-    def Acquire(self):
-
-        # variable to increment acquire attempts
-        numAttempts = 0
-        logging.debug('Acquire')
-        lockvalue = self.RSM(RSM_BLOCK)
-        # logging.debug ("RSM_BLOCK Lock value: " + str(lockvalue))
-        while lockvalue[0] == 1:  # test just first byte of block to check if RSM_LOCKED
-            logging.debug("Acquire: spinning...")
-            self.ExpBackoff(numAttempts)
-            numAttempts += 1
-            lockvalue = self.RSM(RSM_BLOCK)
-        # print('# REQUESTS (WITH EXP BACKOFF): ' + str(numAttempts))
-        return 0
-
-    # def Acquire(self):
-
-    #   # variable to increment acquire attempts
-    #   numAttempts = 0
-    #   logging.debug ('Acquire')
-    #   lockvalue = self.RSM(RSM_BLOCK)
-    #   logging.debug ("RSM_BLOCK Lock value: " + str(lockvalue))
-    #   while lockvalue[0] == 1: # test just first byte of block to check if RSM_LOCKED
-    #     logging.debug ("Acquire: spinning...")
-    #     lockvalue = self.RSM(RSM_BLOCK)
-    #     numAttempts+=1
-    #   print('# REQUESTS (NO EXP BACKOFF): ' + str(numAttempts))
-    #   return 0
-
-    def Release(self):
-
-        logging.debug('Release')
-        # Put()s a zero-filled block to release lock
-        self.Put(RSM_BLOCK, bytearray(RSM_UNLOCKED.ljust(BLOCK_SIZE, b'\x00')))
-        return 0
-
-    ## Copy a block from the cache, or bring a block from server and add to the cache
-
-    def Get(self, block_number):
-
-        logging.debug('Get: ' + str(block_number))
-        if block_number in range(0, TOTAL_NUM_BLOCKS):
-            # is it in the cache?
-            if block_number in self.blockcache:
-                logging.debug('Get: cache hit for ' + str(block_number))
-                return self.blockcache[block_number]
-            else:
-                logging.debug('Get: cache miss for ' + str(block_number))
-                # call Get() method on the server
-                data = self.ServerGet(block_number)
-                # convert to bytearray
-                result = bytearray(data)
-                # store to cache
-                self.blockcache[block_number] = result
-                return result
-
-        logging.error('Get: Block number larger than TOTAL_NUM_BLOCKS: ' + str(block_number))
+        logging.debug('Get: ' + str(virtual_block))
+        if virtual_block in range(0, TOTAL_NUM_BLOCKS):
+            # Translate virtual 
+            server, block = self.VirtualToPhysicalData(virtual_block)
+            return self.ServerGet(server, block)
+        logging.error('Get: Block number larger than TOTAL_NUM_BLOCKS: ' + str(virtual_block))
         quit()
 
     ## Serializes and saves block[] data structure to a disk file
-
     def DumpToDisk(self, filename):
 
-        logging.info("Dumping pickled blocks to file " + filename)
+        logging.debug("Dumping pickled blocks to file " + filename)
         file = open(filename, 'wb')
         file_system_constants = "BS_" + str(BLOCK_SIZE) + "_NB_" + str(TOTAL_NUM_BLOCKS) + "_IS_" + str(INODE_SIZE) \
                                 + "_MI_" + str(MAX_NUM_INODES) + "_MF_" + str(MAX_FILENAME) + "_IDS_" + str(
@@ -363,7 +370,7 @@ class DiskBlocks():
 
     def LoadFromDisk(self, filename):
 
-        logging.info("Reading blocks from pickled file " + filename)
+        logging.debug("Reading blocks from pickled file " + filename)
         file = open(filename, 'rb')
         file_system_constants = "BS_" + str(BLOCK_SIZE) + "_NB_" + str(TOTAL_NUM_BLOCKS) + "_IS_" + str(INODE_SIZE) \
                                 + "_MI_" + str(MAX_NUM_INODES) + "_MF_" + str(MAX_FILENAME) + "_IDS_" + str(
@@ -411,23 +418,23 @@ class DiskBlocks():
         for i in range(FREEBITMAP_BLOCK_OFFSET, TOTAL_NUM_BLOCKS):
             self.Put(i, zeroblock)
 
-    ## Prints out file system information
+    ## Prints out file system debugrmation
 
     def PrintFSInfo(self):
-        logging.info('#### File system information:')
-        logging.info('Number of blocks          : ' + str(TOTAL_NUM_BLOCKS))
-        logging.info('Block size (Bytes)        : ' + str(BLOCK_SIZE))
-        logging.info('Number of inodes          : ' + str(MAX_NUM_INODES))
-        logging.info('inode size (Bytes)        : ' + str(INODE_SIZE))
-        logging.info('inodes per block          : ' + str(INODES_PER_BLOCK))
-        logging.info('Free bitmap offset        : ' + str(FREEBITMAP_BLOCK_OFFSET))
-        logging.info('Free bitmap size (blocks) : ' + str(FREEBITMAP_NUM_BLOCKS))
-        logging.info('Inode table offset        : ' + str(INODE_BLOCK_OFFSET))
-        logging.info('Inode table size (blocks) : ' + str(INODE_NUM_BLOCKS))
-        logging.info('Max blocks per file       : ' + str(MAX_INODE_BLOCK_NUMBERS))
-        logging.info('Data blocks offset        : ' + str(DATA_BLOCKS_OFFSET))
-        logging.info('Data block size (blocks)  : ' + str(DATA_NUM_BLOCKS))
-        logging.info('Raw block layer layout: (B: boot, S: superblock, F: free bitmap, I: inode, D: data')
+        logging.debug('#### File system debugrmation:')
+        logging.debug('Number of blocks          : ' + str(TOTAL_NUM_BLOCKS))
+        logging.debug('Block size (Bytes)        : ' + str(BLOCK_SIZE))
+        logging.debug('Number of inodes          : ' + str(MAX_NUM_INODES))
+        logging.debug('inode size (Bytes)        : ' + str(INODE_SIZE))
+        logging.debug('inodes per block          : ' + str(INODES_PER_BLOCK))
+        logging.debug('Free bitmap offset        : ' + str(FREEBITMAP_BLOCK_OFFSET))
+        logging.debug('Free bitmap size (blocks) : ' + str(FREEBITMAP_NUM_BLOCKS))
+        logging.debug('Inode table offset        : ' + str(INODE_BLOCK_OFFSET))
+        logging.debug('Inode table size (blocks) : ' + str(INODE_NUM_BLOCKS))
+        logging.debug('Max blocks per file       : ' + str(MAX_INODE_BLOCK_NUMBERS))
+        logging.debug('Data blocks offset        : ' + str(DATA_BLOCKS_OFFSET))
+        logging.debug('Data block size (blocks)  : ' + str(DATA_NUM_BLOCKS))
+        logging.debug('Raw block layer layout: (B: boot, S: superblock, F: free bitmap, I: inode, D: data')
         Layout = "BS"
         Id = "01"
         IdCount = 2
@@ -443,15 +450,15 @@ class DiskBlocks():
             Layout += "D"
             Id += str(IdCount)
             IdCount = (IdCount + 1) % 10
-        logging.info(Id)
-        logging.info(Layout)
+        logging.debug(Id)
+        logging.debug(Layout)
 
     ## Prints to screen block contents, from min to max
 
     def PrintBlocks(self, tag, min, max):
-        logging.info('#### Raw disk blocks: ' + tag)
+        logging.debug('#### Raw disk blocks: ' + tag)
         for i in range(min, max):
-            logging.info('Block [' + str(i) + '] : ' + str((self.Get(i)).hex()))
+            logging.debug('Block [' + str(i) + '] : ' + str((self.Get(i)).hex()))
 
 
 #### INODE LAYER
@@ -539,18 +546,18 @@ class Inode():
         # Return the byte array
         return temparray
 
-    ## Prints out this inode object's information to the log
+    ## Prints out this inode object's debugrmation to the log
 
     def Print(self):
-        logging.info('Inode size   : ' + str(self.size))
-        logging.info('Inode type   : ' + str(self.type))
-        logging.info('Inode refcnt : ' + str(self.refcnt))
-        logging.info('Block numbers: ')
+        logging.debug('Inode size   : ' + str(self.size))
+        logging.debug('Inode type   : ' + str(self.type))
+        logging.debug('Inode refcnt : ' + str(self.refcnt))
+        logging.debug('Block numbers: ')
         s = ""
         for i in range(0, MAX_INODE_BLOCK_NUMBERS):
             s += str(self.block_numbers[i])
             s += ","
-        logging.info(s)
+        logging.debug(s)
 
 
 #### Inode number layer
