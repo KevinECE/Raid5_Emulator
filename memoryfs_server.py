@@ -27,14 +27,13 @@ class RequestHandler(SimpleXMLRPCRequestHandler):
 # BLOCK LAYER
 class DiskBlocks():
   def __init__(self, total_num_blocks, block_size):
-    self.block = []                                            
+    self.block = []   
+    self.checksums = {} # Dict to store checksums for each block                                         
     # Initialize raw blocks 
     for i in range (0, total_num_blocks):
       putdata = bytearray(block_size)
       self.block.insert(i,putdata)
-      
-    # Dict to store checksums for each block
-    self.checksums = {}
+      self.checksums
 
 if __name__ == "__main__": 
 
@@ -69,7 +68,7 @@ if __name__ == "__main__":
   if args.sid >= 0:
     SERVER_ID = args.sid
   else:
-    print('Must specify server id')
+    print('Must specify valid server id')
     quit()
 
   # Initialize blocks
@@ -84,17 +83,16 @@ if __name__ == "__main__":
   server = SimpleXMLRPCServer(("127.0.0.1", PORT), requestHandler=RequestHandler) 
 
   def Get(block_number):
+    # Read block specified by block_number
+    result = RawBlocks.block[block_number]
+    test = RawBlocks.checksums.get(block_number)
     # Corrupt data if block_number = cblk
     if(block_number == CORRUPT_BLOCK_NUMBER):
-      RawBlocks.block[args.cblk] = bytearray(b'\xFF') * BLOCK_SIZE
-      
-    # Read data from a block
-    result = RawBlocks.block[block_number]
-    test = CalcCheckSum(result)
+      RawBlocks.block[block_number] = bytearray(b'\xFF') * BLOCK_SIZE
+      test = CalcCheckSum(RawBlocks.block[block_number])
 
     # Validate checksum
-    if RawBlocks.checksums.get(block_number) is not None and test != RawBlocks.checksums.get(block_number):
-      print('CORRECTLY DETECTED ERROR')
+    if test != RawBlocks.checksums.get(block_number):
       return CHECKSUM_ERROR
 
     return result
@@ -110,14 +108,6 @@ if __name__ == "__main__":
     return 0
 
   server.register_function(Put)
-
-  def RSM(block_number):
-    result = RawBlocks.block[block_number]
-    # RawBlocks.block[block_number] = RSM_LOCKED
-    RawBlocks.block[block_number] = bytearray(RSM_LOCKED.ljust(BLOCK_SIZE,b'\x01'))
-    return result
-
-  server.register_function(RSM)
 
   # Run the server's main loop
   print ("Running block server with nb=" + str(TOTAL_NUM_BLOCKS) + ", bs=" + str(BLOCK_SIZE) + " on port " + str(PORT))

@@ -15,7 +15,12 @@ class FSShell():
 
   # implements repair
   def repair(self, server_ID):
-    logging.info('Initiating repair on server ' + str(server_ID))
+    try:
+      server_ID = int(server_ID)
+    except ValueError:
+      print('Error: ' + server_ID + ' not a valid Integer')
+      return -1
+    logging.info('Initiating repair on server ' + str(server_ID) + '...')
     self.FileObject.RawBlocks.Repair(int(server_ID))
     logging.info('Repair complete!')
 
@@ -150,9 +155,9 @@ class FSShell():
     parityServer, parityBlock = self.FileObject.RawBlocks.VirtualToPhysicalParity(n)
     
     # output parity block for speicified block number (n) if parity = True
-    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(parityServer, parityBlock, n).hex())))
+    logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(parityServer, parityBlock).hex())))
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
-    logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.ServerGet(dataServer, dataBlock, n).hex())))
+    logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.ServerGet(dataServer, dataBlock).hex())))
   
     return 0
 
