@@ -94,7 +94,8 @@ class FSShell():
     inobj.InodeNumberToInode()
     block_index = 0
     while block_index <= (inobj.inode.size // BLOCK_SIZE):
-      block = self.FileObject.RawBlocks.Get(inobj.inode.block_numbers[block_index])
+      if block_index < len(inobj.inode.block_numbers):
+        block = self.FileObject.RawBlocks.Get(inobj.inode.block_numbers[block_index])
       if block_index == (inobj.inode.size // BLOCK_SIZE):
         end_position = inobj.inode.size % BLOCK_SIZE
       else:

@@ -33,7 +33,7 @@ class DiskBlocks():
     for i in range (0, total_num_blocks):
       putdata = bytearray(block_size)
       self.block.insert(i,putdata)
-      self.checksums
+      self.checksums[i] = 0
 
 if __name__ == "__main__": 
 
