@@ -188,12 +188,14 @@ class DiskBlocks():
         logging.debug('Reconnected server [' + str(server_ID) + '] to port [' + str(self.ports[server_ID]) + ']')
         # Reset FAILED_SERVER to -1
         FAILED_SERVER = -1
+        # Get the size of the server
+        SERVER_SIZE = self.servers[server_ID].GetServerSize()
         # Regenerate all blocks for server [server_ID]
-        for i in range(0, TOTAL_NUM_BLOCKS // self.numServers):
+        for i in range(0, SERVER_SIZE):
             recovered_block_data = self.RecoverBlock(server_ID, i)
             self.servers[server_ID].Put(i, recovered_block_data)
-            logging.debug('Recovered block [' + str(i) + ']')
-            logging.debug(recovered_block_data.hex())
+            # logging.debug('Recovered block [' + str(i) + ']')
+            # logging.debug(recovered_block_data.hex())
         
     ## Recovers data for a specific (server, block) pair
     def RecoverBlock(self, server, block_number):

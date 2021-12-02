@@ -109,6 +109,11 @@ if __name__ == "__main__":
 
   server.register_function(Put)
 
+  def GetServerSize():
+    return TOTAL_NUM_BLOCKS
+  
+  server.register_function(GetServerSize)
+
   # Run the server's main loop
   print ("Running block server with nb=" + str(TOTAL_NUM_BLOCKS) + ", bs=" + str(BLOCK_SIZE) + " on port " + str(PORT))
   server.serve_forever()
