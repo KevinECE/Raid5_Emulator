@@ -181,14 +181,13 @@ class DiskBlocks():
     def Repair(self, server_ID):
         
         global FAILED_SERVER
+
         # Reconnect to server [server_ID]
         server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[server_ID])
         self.servers[server_ID] = (xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
         logging.debug('Reconnected server [' + str(server_ID) + '] to port [' + str(self.ports[server_ID]) + ']')
-
         # Reset FAILED_SERVER to -1
         FAILED_SERVER = -1
-
         # Regenerate all blocks for server [server_ID]
         for i in range(0, TOTAL_NUM_BLOCKS // self.numServers):
             recovered_block_data = self.RecoverBlock(server_ID, i)
@@ -215,7 +214,7 @@ class DiskBlocks():
         return recovered
 
     ## Generate parity for new data
-    def GenerateParity(self, virtual_block, newData, failstop=False):
+    def GenerateParity(self, virtual_block, newData):
         
         # Translate virtual
         dataServer, dataBlock = self.VirtualToPhysicalData(virtual_block)
@@ -297,7 +296,6 @@ class DiskBlocks():
             self.servers[parityServer].Put(parityBlock, parity)
         elif parityServer == FAILED_SERVER:
             logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
-            # logging.debug('Parity Block Failed -> Just do put dont generate parity')
             self.servers[dataServer].Put(dataBlock, putdata)
         else:
             # generate parity for new block data
