@@ -13,6 +13,10 @@ class FSShell():
     self.cwd = 0
     self.FileObject = file
 
+  # displays load for each server as well as the average load
+  def showload(self):
+    self.FileObject.RawBlocks.ShowLoad()
+
   # implements repair
   def repair(self, server_ID):
     try:
@@ -20,9 +24,9 @@ class FSShell():
     except ValueError:
       print('Error: ' + server_ID + ' not a valid Integer')
       return -1
-    logging.info('Initiating repair on server ' + str(server_ID) + '...')
+    logging.debug('Initiating repair on server ' + str(server_ID) + '...')
     self.FileObject.RawBlocks.Repair(int(server_ID))
-    logging.info('Repair complete!')
+    logging.debug('Repair complete!')
 
   # implements cd (change directory)
   def cd(self, dir):
@@ -155,7 +159,7 @@ class FSShell():
     dataServer, dataBlock = self.FileObject.RawBlocks.VirtualToPhysicalData(n)
     parityServer, parityBlock = self.FileObject.RawBlocks.VirtualToPhysicalParity(n)
     
-    # output parity block for speicified block number (n) if parity = True
+    # output parity block for speicified block numberr (n) if parity = True
     logging.info('Block Parity [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.ServerGet(parityServer, parityBlock).hex())))
     #logging.info('Block (string) [' + str(n) + '] : ' + str((self.FileObject.RawBlocks.Get(n).decode(encoding='UTF-8',errors='ignore'))))
     logging.info('Block (hex) [' + str(n) + ']  : ' + str((self.FileObject.RawBlocks.ServerGet(dataServer, dataBlock).hex())))
@@ -206,6 +210,8 @@ class FSShell():
       splitcmd = command.split()
       if len(splitcmd) == 0:
         continue
+      elif splitcmd[0] == "showload":
+          self.showload()
       elif splitcmd[0] == "repair":
         if len(splitcmd) != 2:
           print("Error: repair requires one argument")
@@ -215,51 +221,37 @@ class FSShell():
         if len(splitcmd) != 2:
           print ("Error: cd requires one argument")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.cd(splitcmd[1])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "cat":
         if len(splitcmd) != 2:
           print ("Error: cat requires one argument")
-        else:
-          #self.FileObject.RawBlocks.Acquire()         
+        else:      
           self.cat(splitcmd[1])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "mkdir":
         if len(splitcmd) != 2:
           print ("Error: mkdir requires one argument")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.mkdir(splitcmd[1])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "create":
         if len(splitcmd) != 2:
           print ("Error: create requires one argument")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.create(splitcmd[1])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "ln":
         if len(splitcmd) != 3:
           print ("Error: ln requires two arguments")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.link(splitcmd[1], splitcmd[2])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "chroot":
         if len(splitcmd) != 2:
           print ("Error: chroot requires one argument")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.chroot(splitcmd[1])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "append":
         if len(splitcmd) != 3:
           print ("Error: append requires two arguments")
         else:
-          #self.FileObject.RawBlocks.Acquire()
           self.append(splitcmd[1], splitcmd[2])
-          #self.FileObject.RawBlocks.Release()
       elif splitcmd[0] == "ls":
         #self.FileObject.RawBlocks.Acquire()        
         self.ls()

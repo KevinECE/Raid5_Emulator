@@ -2,6 +2,9 @@ import pickle, logging
 import argparse
 import hashlib
 
+# Track number of requests for this server
+NUM_REQUESTS = 0
+
 # Corrupt block number variable
 CORRUPT_BLOCK_NUMBER = -1
 
@@ -83,6 +86,9 @@ if __name__ == "__main__":
   server = SimpleXMLRPCServer(("127.0.0.1", PORT), requestHandler=RequestHandler) 
 
   def Get(block_number):
+    # Inc number of requests for this server
+    global NUM_REQUESTS 
+    NUM_REQUESTS += 1
     # Read block specified by block_number
     result = RawBlocks.block[block_number]
     test = RawBlocks.checksums.get(block_number)
@@ -100,6 +106,9 @@ if __name__ == "__main__":
   server.register_function(Get)
 
   def Put(block_number, data):
+    # Inc number of requests for this server
+    global NUM_REQUESTS 
+    NUM_REQUESTS += 1
     # Store data
     RawBlocks.block[block_number] = bytearray(data.data)
     # Compute and store a checksum for the data
@@ -113,6 +122,11 @@ if __name__ == "__main__":
     return TOTAL_NUM_BLOCKS
   
   server.register_function(GetServerSize)
+
+  def GetNumRequests():
+    return NUM_REQUESTS
+
+  server.register_function(GetNumRequests)
 
   # Run the server's main loop
   print ("Running block server with nb=" + str(TOTAL_NUM_BLOCKS) + ", bs=" + str(BLOCK_SIZE) + " on port " + str(PORT))
