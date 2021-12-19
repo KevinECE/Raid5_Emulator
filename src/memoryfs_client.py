@@ -117,12 +117,12 @@ class DiskBlocks():
             if self.ports[i]:
                 server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[i])
                 self.servers.append(xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
-                print(server_url)
+                logging.debug(server_url)
             else:
                 print('Must specify port number for each of the ' + str(self.numServers) + ' servers')
                 quit()
 
-        print('Running ' + str(len(self.servers)) + ' servers on ports ' + str(self.ports))
+        print('Running ' + str(len(self.servers)) + ' servers on ports ' + str(self.ports[:self.numServers]))
 
         self.HandleFSConstants(args)
 
@@ -175,26 +175,49 @@ class DiskBlocks():
         FILE_NAME_DIRENTRY_SIZE = MAX_FILENAME + INODE_NUMBER_DIRENTRY_SIZE
 
         # Number of filename+inode entries that can be stored in a single block
-        FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE    
+        FILE_ENTRIES_PER_DATA_BLOCK = BLOCK_SIZE // FILE_NAME_DIRENTRY_SIZE   
+
+    # ShowLoad: displays individual and average requests per server
+    def ShowLoad(self):
+        global FAILED_SERVER
+        totalReqs = 0
+        numServers = self.numServers
+        for i in range(0, self.numServers):
+            if(i != FAILED_SERVER):
+                try:
+                    numReqs = self.servers[i].GetNumRequests()
+                except ConnectionRefusedError:
+                    FAILED_SERVER = i
+                    numReqs = 0
+                    numServers -= 1
+                    print('Server [' + str(i) + '] failed')
+            else:
+                numReqs = 0
+                numServers -= 1
+                print('Server [' + str(i) + '] failed')
+            totalReqs += numReqs
+            logging.info('Server [' + str(i) + '] requests = ' +  str(numReqs))
+        logging.info('Average Load (requests/server) = ' + str(totalReqs // numServers))
 
     # Repair: reconnects to server_ID, and regenerates all blocks for server_ID using data from the other servers in the array 
     def Repair(self, server_ID):
         
         global FAILED_SERVER
+
         # Reconnect to server [server_ID]
         server_url = 'http://' + SERVER_ADDRESS + ':' + str(self.ports[server_ID])
         self.servers[server_ID] = (xmlrpc.client.ServerProxy(server_url, use_builtin_types=True)) 
         logging.debug('Reconnected server [' + str(server_ID) + '] to port [' + str(self.ports[server_ID]) + ']')
-
         # Reset FAILED_SERVER to -1
         FAILED_SERVER = -1
-
+        # Get the size of the server
+        SERVER_SIZE = self.servers[server_ID].GetServerSize()
         # Regenerate all blocks for server [server_ID]
-        for i in range(0, TOTAL_NUM_BLOCKS // self.numServers):
+        for i in range(0, SERVER_SIZE):
             recovered_block_data = self.RecoverBlock(server_ID, i)
             self.servers[server_ID].Put(i, recovered_block_data)
-            logging.debug('Recovered block [' + str(i) + ']')
-            logging.debug(recovered_block_data.hex())
+            # logging.debug('Recovered block [' + str(i) + ']')
+            # logging.debug(recovered_block_data.hex())
         
     ## Recovers data for a specific (server, block) pair
     def RecoverBlock(self, server, block_number):
@@ -215,7 +238,7 @@ class DiskBlocks():
         return recovered
 
     ## Generate parity for new data
-    def GenerateParity(self, virtual_block, newData, failstop=False):
+    def GenerateParity(self, virtual_block, newData):
         
         # Translate virtual
         dataServer, dataBlock = self.VirtualToPhysicalData(virtual_block)
@@ -297,7 +320,6 @@ class DiskBlocks():
             self.servers[parityServer].Put(parityBlock, parity)
         elif parityServer == FAILED_SERVER:
             logging.debug('FAILSTOP ON SERVER [' + str(FAILED_SERVER) + ']')
-            # logging.debug('Parity Block Failed -> Just do put dont generate parity')
             self.servers[dataServer].Put(dataBlock, putdata)
         else:
             # generate parity for new block data
@@ -421,20 +443,20 @@ class DiskBlocks():
     ## Prints out file system debugrmation
 
     def PrintFSInfo(self):
-        logging.debug('#### File system debugrmation:')
-        logging.debug('Number of blocks          : ' + str(TOTAL_NUM_BLOCKS))
-        logging.debug('Block size (Bytes)        : ' + str(BLOCK_SIZE))
-        logging.debug('Number of inodes          : ' + str(MAX_NUM_INODES))
-        logging.debug('inode size (Bytes)        : ' + str(INODE_SIZE))
-        logging.debug('inodes per block          : ' + str(INODES_PER_BLOCK))
-        logging.debug('Free bitmap offset        : ' + str(FREEBITMAP_BLOCK_OFFSET))
-        logging.debug('Free bitmap size (blocks) : ' + str(FREEBITMAP_NUM_BLOCKS))
-        logging.debug('Inode table offset        : ' + str(INODE_BLOCK_OFFSET))
-        logging.debug('Inode table size (blocks) : ' + str(INODE_NUM_BLOCKS))
-        logging.debug('Max blocks per file       : ' + str(MAX_INODE_BLOCK_NUMBERS))
-        logging.debug('Data blocks offset        : ' + str(DATA_BLOCKS_OFFSET))
-        logging.debug('Data block size (blocks)  : ' + str(DATA_NUM_BLOCKS))
-        logging.debug('Raw block layer layout: (B: boot, S: superblock, F: free bitmap, I: inode, D: data')
+        logging.info('#### File system debugrmation:')
+        logging.info('Number of blocks          : ' + str(TOTAL_NUM_BLOCKS))
+        logging.info('Block size (Bytes)        : ' + str(BLOCK_SIZE))
+        logging.info('Number of inodes          : ' + str(MAX_NUM_INODES))
+        logging.info('inode size (Bytes)        : ' + str(INODE_SIZE))
+        logging.info('inodes per block          : ' + str(INODES_PER_BLOCK))
+        logging.info('Free bitmap offset        : ' + str(FREEBITMAP_BLOCK_OFFSET))
+        logging.info('Free bitmap size (blocks) : ' + str(FREEBITMAP_NUM_BLOCKS))
+        logging.info('Inode table offset        : ' + str(INODE_BLOCK_OFFSET))
+        logging.info('Inode table size (blocks) : ' + str(INODE_NUM_BLOCKS))
+        logging.info('Max blocks per file       : ' + str(MAX_INODE_BLOCK_NUMBERS))
+        logging.info('Data blocks offset        : ' + str(DATA_BLOCKS_OFFSET))
+        logging.info('Data block size (blocks)  : ' + str(DATA_NUM_BLOCKS))
+        logging.info('Raw block layer layout: (B: boot, S: superblock, F: free bitmap, I: inode, D: data')
         Layout = "BS"
         Id = "01"
         IdCount = 2
@@ -450,8 +472,8 @@ class DiskBlocks():
             Layout += "D"
             Id += str(IdCount)
             IdCount = (IdCount + 1) % 10
-        logging.debug(Id)
-        logging.debug(Layout)
+        logging.info(Id)
+        logging.info(Layout)
 
     ## Prints to screen block contents, from min to max
 
